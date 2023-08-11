@@ -84,6 +84,64 @@ app.get('/top-articles/:year/:month/:day', async (req: Request, res: Response) =
     }
 });
 
+app.get('/article-views/:year/:month/:day', async (req: Request, res: Response) => {
+    try {
+        const { year, month, day } = req.params;
+        const { title, duration } = req.query;
+
+        if (!title) {
+            return res.status(400).json({ error: "Article title is required." });
+        }
+
+        if (['week', 'month'].indexOf(duration as string) === -1) {
+            return res.status(400).json({ error: "Invalid duration. Please select either 'week' or 'month'." });
+        }
+
+        const dateStr = `${year}/${month}/${day}`;
+        const parsedDate = parse(dateStr, 'yyyy/MM/dd', new Date());
+
+        if (!isValid(parsedDate)) {
+            return res.status(400).json({ error: "Invalid date provided." });
+        }
+
+        const startDate = parsedDate;
+        let endDate;
+
+        if (duration === 'week') {
+            endDate = new Date(startDate.getTime() + 6 * 24 * 60 * 60 * 1000);
+        } else {
+            endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0);
+        }
+
+        const days = eachDayOfInterval({
+            start: startDate,
+            end: endDate
+        });
+
+        const dataPromises = days.map(day => fetchArticleData(format(day, 'yyyy/MM/dd')));
+
+        const dataForDuration = await Promise.all(dataPromises);
+        console.log(dataForDuration)
+
+        let totalViews = 0;
+
+        for (const dayData of dataForDuration) {
+            const articleData = dayData.find((article: Article) => article.article === title);
+            if (articleData) {
+                totalViews += articleData.views;
+            }
+        }
+
+        res.json({ title, totalViews });
+
+    } catch (error) {
+        if (axios.isAxiosError(error)) {
+            res.status(500).send({ error: error.message });
+        } else {
+            res.status(500).send({ error: 'An unknown error occurred.' });
+        }
+    }
+});
 
 app.get('/', (req: Request, res: Response) => {
     res.send('Hello World!');
