@@ -22,10 +22,14 @@ async function fetchArticleData(date: string) {
     return response.data.items[0].articles;
 }
 
-app.get('/top-articles/:year/:month/:day', async (req: Request, res: Response) => {
+app.get('/top-articles/:year/:month/:day?', async (req: Request, res: Response) => {
     try {
         const { year, month, day } = req.params;
         const { duration } = req.query;
+
+        if (!day) {
+            return res.status(400).json({ error: "Day parameter is missing." });
+        }
 
         if (['week', 'month'].indexOf(duration as string) === -1) {
             return res.status(400).json({ error: "Invalid duration. Please select either 'week' or 'month'." });
@@ -133,6 +137,55 @@ app.get('/article-views/:year/:month/:day', async (req: Request, res: Response) 
         }
 
         res.json({ title, totalViews });
+
+    } catch (error) {
+        if (axios.isAxiosError(error)) {
+            res.status(500).send({ error: error.message });
+        } else {
+            res.status(500).send({ error: 'An unknown error occurred.' });
+        }
+    }
+});
+
+app.get('/max-views-day/:year/:month', async (req: Request, res: Response) => {
+    try {
+        const { year, month } = req.params;
+        const { title } = req.query;
+
+        if (!title) {
+            return res.status(400).json({ error: "Article title is required." });
+        }
+
+        const startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
+        const endDate = new Date(parseInt(year), parseInt(month), 0); // last day of the month
+
+        const days = eachDayOfInterval({
+            start: startDate,
+            end: endDate
+        });
+
+        const dataPromises = days.map(day => fetchArticleData(format(day, 'yyyy/MM/dd')));
+
+        const dataForMonth = await Promise.all(dataPromises);
+
+        let maxViews = 0;
+        let maxViewDate;
+
+        for (let i = 0; i < dataForMonth.length; i++) {
+            const dayData = dataForMonth[i];
+            const articleData = dayData.find((article: Article) => article.article === title);
+
+            if (articleData && articleData.views > maxViews) {
+                maxViews = articleData.views;
+                maxViewDate = days[i];
+            }
+        }
+
+        if (maxViewDate) {
+            res.json({ title, mostViewsDate: format(maxViewDate, 'yyyy/MM/dd'), views: maxViews });
+        } else {
+            res.status(404).json({ error: `No data found for the article titled "${title}" in ${month}-${year}.` });
+        }
 
     } catch (error) {
         if (axios.isAxiosError(error)) {
